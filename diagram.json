@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "author": "Noteolvides",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-c3-devkitm-1",
+      "id": "esp",
+      "top": -240.3,
+      "left": -13.38,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-max7219-matrix",
+      "id": "matrix1",
+      "top": -114.6,
+      "left": -354.94,
+      "attrs": { "chain": "3" }
+    },
+    {
+      "type": "wokwi-max7219-matrix",
+      "id": "matrix2",
+      "top": -37.8,
+      "left": -354.94,
+      "attrs": { "chain": "3" }
+    },
+    {
+      "type": "wokwi-max7219-matrix",
+      "id": "matrix3",
+      "top": 39,
+      "left": -354.94,
+      "attrs": { "chain": "3" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "matrix1:V+", "esp:5V.2", "green", [ "h57.6", "v115.2" ] ],
+    [ "matrix1:GND", "esp:GND.5", "black", [ "h48", "v105.6" ] ],
+    [ "esp:1", "matrix1:DIN", "green", [ "h-9.6", "v57.6" ] ],
+    [ "matrix1:CS", "esp:2", "green", [ "h67.2", "v-124.8" ] ],
+    [ "esp:3", "matrix1:CLK", "green", [ "h-28.8", "v124.8" ] ],
+    [ "matrix2:V+", "matrix1:V+.2", "black", [ "v-19.2", "h-487.34" ] ],
+    [ "matrix2:GND", "matrix1:GND.2", "black", [ "v-28.8", "h-487.34" ] ],
+    [ "matrix2:DIN", "matrix1:DOUT", "black", [ "v-38.4", "h-487.34" ] ],
+    [ "matrix2:CS", "matrix1:CS.2", "black", [ "v-48", "h-487.34" ] ],
+    [ "matrix1:CLK.2", "matrix2:CLK", "black", [ "v19.2", "h487.34" ] ],
+    [ "matrix3:V+", "matrix2:V+.2", "black", [ "v-19.2", "h-487.34" ] ],
+    [ "matrix3:GND", "matrix2:GND.2", "black", [ "h0" ] ],
+    [ "matrix3:DIN", "matrix2:DOUT", "black", [ "v-38.4", "h-487.34" ] ],
+    [ "matrix3:CS", "matrix2:CS.2", "black", [ "v-48", "h-487.34" ] ],
+    [ "matrix3:CLK", "matrix2:CLK.2", "black", [ "v-57.6", "h-487.34" ] ]
+  ],
+  "serialMonitor": { "display": "terminal", "convertEol": true },
+  "dependencies": {}
+}
