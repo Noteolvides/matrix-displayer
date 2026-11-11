@@ -25,7 +25,9 @@ pub fn wifi(
         auth_method = AuthMethod::None;
         info!("Wifi password is empty");
     }
-    let mut esp_wifi = EspWifi::new(modem, sysloop.clone(), None)?;
+    // NVS lets the driver store RF calibration data between boots
+    let nvs = esp_idf_svc::nvs::EspDefaultNvsPartition::take()?;
+    let mut esp_wifi = EspWifi::new(modem, sysloop.clone(), Some(nvs))?;
 
     let mut wifi = BlockingWifi::wrap(&mut esp_wifi, sysloop)?;
 
@@ -34,6 +36,12 @@ pub fn wifi(
     info!("Starting wifi...");
 
     wifi.start()?;
+
+    // ESP32-C3 (SuperMini-style) boards have a weak RF design: at max TX power (~20 dBm)
+    // the signal distorts and connecting fails intermittently. Limit to 8.5 dBm (units of 0.25 dBm).
+    unsafe {
+        esp_idf_svc::sys::esp!(esp_idf_svc::sys::esp_wifi_set_max_tx_power(34))?;
+    }
 
     info!("Scanning...");
 
@@ -69,7 +77,19 @@ pub fn wifi(
 
     info!("Connecting wifi...");
 
-    wifi.connect()?;
+    // Retry: the first attempt sometimes fails on this board/router combination
+    const MAX_ATTEMPTS: u32 = 5;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match wifi.connect() {
+            Ok(()) => break,
+            Err(e) if attempt < MAX_ATTEMPTS => {
+                error!("Wifi connect attempt {}/{} failed: {:?}, retrying...", attempt, MAX_ATTEMPTS, e);
+                let _ = wifi.disconnect();
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
 
     info!("Waiting for DHCP lease...");
 
@@ -84,7 +104,10 @@ pub fn wifi(
         let sntp = sntp::EspSntp::new_default()?;
         info!("SNTP initialized, waiting for status!");
     
-        while sntp.get_sync_status() != SyncStatus::Completed {}
+        // Sleep while waiting: a busy loop starves the IDLE task and trips the task watchdog
+        while sntp.get_sync_status() != SyncStatus::Completed {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
     
         info!("SNTP status received!");
         let timer: *mut i64 = ptr::null_mut();
@@ -139,6 +162,8 @@ pub fn post_with_time(
     let connection = EspHttpConnection::new(&Configuration {
         use_global_ca_store: true,
         crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+        // Default TX buffer (512 B) is too small for all the request headers -> truncated request -> 400
+        buffer_size_tx: Some(2048),
         ..Default::default()
     })?;
     
@@ -153,16 +178,23 @@ pub fn post_with_time(
         "stopIds": [stop_id],
         "stopName": stop_name,
         "stopType": stop_type,
+        "requestTime": departure_time,
         "departureOrArrival": "DEPARTURE",
+        "clientTimeZoneOffsetInMS": 0,
+        "refresh": false,
     });
 
     let request_body_str = request_body.to_string();
+    // Without content-length the ESP HTTP client sends the body chunked,
+    // and the TFI API answers chunked requests with a 500.
+    let content_length = request_body_str.len().to_string();
 
     // Set the headers
     let headers = [
         ("accept", "application/json, text/plain, */*"),
         ("accept-language", "en-US,en;q=0.9"),
         ("content-type", "application/json"),
+        ("content-length", content_length.as_str()),
         ("dnt", "1"),
         ("ocp-apim-subscription-key", api_key),
         ("origin", "https://journeyplanner-production.transportforireland.ie"),
@@ -258,7 +290,21 @@ pub fn post_with_time(
             Ok(schedule_times)
         }
         _ => {
-            log::error!("Unexpected response code: {}", status);
+            // Read (up to 1 KB of) the error body: the API usually says what's wrong
+            let mut buf = [0u8; 1024];
+            let mut len = 0;
+            while len < buf.len() {
+                match response.read(&mut buf[len..]) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => len += n,
+                }
+            }
+            log::error!(
+                "Unexpected response code: {} body: {}",
+                status,
+                String::from_utf8_lossy(&buf[..len])
+            );
+            log::error!("Request body was: {}", request_body_str);
             bail!("Unexpected response code: {}", status);
         }
     }

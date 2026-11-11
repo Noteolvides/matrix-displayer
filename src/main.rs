@@ -94,7 +94,7 @@ fn main() -> ResultAny<()> {
     let cs = peripherals.pins.gpio2;
     let spi = peripherals.spi2;
 
-    let config = config::Config::new().baudrate((5).MHz().into());
+    let config = config::Config::new().baudrate((1).MHz().into());
     let device = SpiDeviceDriver::new_single(
         spi,
         sclk,
@@ -160,6 +160,7 @@ fn main() -> ResultAny<()> {
         )
         .draw(&mut display)?;
 
+        display.flush()?;
         display.flush()?;
 
         thread::sleep(Duration::from_secs(10));
